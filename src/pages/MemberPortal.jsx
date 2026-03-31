@@ -127,9 +127,10 @@ const MemberPortal = () => {
                             <div key={item.itemId} style={{ border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px', background: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
                                 {/* THE MOVIE POSTER */}
                                 <img 
-                                    src={item.imageUrl || 'https://via.placeholder.com/300x450?text=No+Poster'} 
-                                    alt={item.title} 
-                                    style={{ width: '100%', height: '350px', objectFit: 'cover', borderRadius: '4px', marginBottom: '15px' }} 
+                                     src={item.imageUrl} 
+                                      alt={item.title} 
+                                       onError={(e) => { e.target.src = 'https://via.placeholder.com/150x225?text=No+Poster'; }} 
+                                       style={{ width: '100%', height: 'auto', borderRadius: '4px' }}
                                 />
                                 <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', textAlign: 'center' }}>{item.title}</h3>
                                 <p style={{ margin: '0 0 15px 0', color: '#666', fontSize: '14px', textAlign: 'center' }}>{item.category} • {item.format}</p>
