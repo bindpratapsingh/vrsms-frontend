@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import Webcam from "react-webcam";
 
 const StaffDashboard = () => {
     const navigate = useNavigate();
@@ -21,6 +22,13 @@ const StaffDashboard = () => {
     const [regForm, setRegForm] = useState({
         fullName: '', phone: '', address: '', photoUrl: '', depositPaid: false
     });
+
+    const webcamRef = useRef(null);
+    const capturePhoto = useCallback(() => {
+        const imageSrc = webcamRef.current.getScreenshot();
+        setRegForm({...regForm, photoUrl: imageSrc});
+        setMessage({ type: 'success', text: 'Photo captured successfully!' });
+    }, [webcamRef, regForm]);
 
     const fetchAvailableMovies = useCallback(async () => {
         try {
@@ -159,10 +167,20 @@ const StaffDashboard = () => {
                                 <button onClick={handleCustomerSearch} style={{ padding: '12px 24px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>Search</button>
                             </div>
                             {foundCustomer && (
-                                <div style={{ marginTop: '16px', padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #e0f2fe' }}>
-                                    <p style={{ margin: 0, color: '#0369a1', fontWeight: '700' }}>✓ {foundCustomer.fullName}</p>
-                                </div>
-                            )}
+        <div style={{ marginTop: '16px', padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #e0f2fe', display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {/* Show the Member's Face! */}
+            <img 
+                src={foundCustomer.photoUrl} 
+                alt="Member" 
+                onError={(e) => { e.target.src = 'https://via.placeholder.com/80x80?text=No+Photo'; }}
+                style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: '2px solid #0284c7' }} 
+            />
+            <div>
+                <p style={{ margin: 0, color: '#0369a1', fontWeight: '700', fontSize: '18px' }}>✓ {foundCustomer.fullName}</p>
+                <p style={{ margin: 0, color: '#0284c7', fontSize: '14px' }}>Identity Verified</p>
+            </div>
+        </div>
+    )}
                         </div>
 
                         <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', opacity: foundCustomer ? 1 : 0.6 }}>
@@ -222,9 +240,27 @@ const StaffDashboard = () => {
                             <textarea required value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box', minHeight: '80px' }} placeholder="Full residential address" />
                         </div>
                         <div style={{ marginBottom: '24px' }}>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Photo/ID URL</label>
-                            <input type="text" required value={regForm.photoUrl} onChange={e => setRegForm({...regForm, photoUrl: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="https://..." />
-                        </div>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Member Live Photo</label>
+        
+        {/* If a photo is taken, show it. Otherwise, show the live camera! */}
+        {regForm.photoUrl ? (
+            <div style={{ textAlign: 'center' }}>
+                <img src={regForm.photoUrl} alt="Captured" style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '2px solid #059669' }} />
+                <button type="button" onClick={() => setRegForm({...regForm, photoUrl: ''})} style={{ display: 'block', margin: '10px auto', padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retake Photo</button>
+            </div>
+        ) : (
+            <div style={{ textAlign: 'center', background: '#111', padding: '10px', borderRadius: '8px' }}>
+                <Webcam
+                    audio={false}
+                    ref={webcamRef}
+                    screenshotFormat="image/jpeg"
+                    videoConstraints={{ facingMode: "user" }}
+                    style={{ width: '100%', maxWidth: '300px', borderRadius: '4px' }}
+                />
+                <button type="button" onClick={capturePhoto} style={{ display: 'block', width: '100%', marginTop: '10px', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📸 Capture Photo</button>
+            </div>
+        )}
+    </div>
                         
                         <div style={{ marginBottom: '24px', padding: '16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <input type="checkbox" id="deposit" checked={regForm.depositPaid} onChange={e => setRegForm({...regForm, depositPaid: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
