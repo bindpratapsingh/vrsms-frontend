@@ -129,6 +129,7 @@ const MemberPortal = () => {
                                 <img 
                                      src={item.imageUrl} 
                                       alt={item.title} 
+                                       e.target.onerror = null;
                                        onError={(e) => { e.target.src = 'https://via.placeholder.com/150x225?text=No+Poster'; }} 
                                        style={{ width: '100%', height: 'auto', borderRadius: '4px' }}
                                 />
