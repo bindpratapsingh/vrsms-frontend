@@ -126,8 +126,7 @@ const MemberPortal = () => {
                         {catalog.map(item => (
                             <div key={item.itemId} style={{ border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px', background: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
                                 {/* THE MOVIE POSTER */}
-<<<<<<< HEAD
-                               <img 
+<img 
     src={item.imageUrl} 
     alt={item.title} 
     onError={(e) => { 
@@ -136,15 +135,6 @@ const MemberPortal = () => {
     }} 
     style={{ width: '100%', height: 'auto', borderRadius: '4px' }}
 />
-=======
-                                <img 
-                                     src={item.imageUrl} 
-                                      alt={item.title} 
-                                       e.target.onerror = null;
-                                       onError={(e) => { e.target.src = 'https://via.placeholder.com/150x225?text=No+Poster'; }} 
-                                       style={{ width: '100%', height: 'auto', borderRadius: '4px' }}
-                                />
->>>>>>> 84c5a96854f9aaf9daeeadba8871cd1a989121d5
                                 <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', textAlign: 'center' }}>{item.title}</h3>
                                 <p style={{ margin: '0 0 15px 0', color: '#666', fontSize: '14px', textAlign: 'center' }}>{item.category} • {item.format}</p>
                                 
