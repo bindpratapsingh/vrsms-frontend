@@ -126,12 +126,15 @@ const MemberPortal = () => {
                         {catalog.map(item => (
                             <div key={item.itemId} style={{ border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px', background: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
                                 {/* THE MOVIE POSTER */}
-                                <img 
-                                     src={item.imageUrl} 
-                                      alt={item.title} 
-                                       onError={(e) => { e.target.src = 'https://via.placeholder.com/150x225?text=No+Poster'; }} 
-                                       style={{ width: '100%', height: 'auto', borderRadius: '4px' }}
-                                />
+                               <img 
+    src={item.imageUrl} 
+    alt={item.title} 
+    onError={(e) => { 
+        e.target.onerror = null; 
+        e.target.src = 'https://placehold.co/150x225?text=No+Poster'; 
+    }} 
+    style={{ width: '100%', height: 'auto', borderRadius: '4px' }}
+/>
                                 <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', textAlign: 'center' }}>{item.title}</h3>
                                 <p style={{ margin: '0 0 15px 0', color: '#666', fontSize: '14px', textAlign: 'center' }}>{item.category} • {item.format}</p>
                                 
@@ -170,6 +173,7 @@ const MemberPortal = () => {
                         <thead>
                             <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
                                 <th style={{ padding: '12px' }}>Receipt ID</th>
+                                <th style={{ padding: '12px 8px' }}>Movie Title</th>
                                 <th style={{ padding: '12px' }}>Checkout Date</th>
                                 <th style={{ padding: '12px' }}>Return Date</th>
                                 <th style={{ padding: '12px' }}>Status</th>
@@ -181,6 +185,7 @@ const MemberPortal = () => {
                             {rentalHistory.map(loan => (
                                 <tr key={loan.loanId} style={{ borderBottom: '1px solid #eee' }}>
                                     <td style={{ padding: '12px', fontFamily: 'monospace' }}>{loan.loanId.substring(0, 8)}</td>
+                                    <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>{loan.inventoryItem?.title || loan.itemTitle || 'Unknown Title'}</td>
                                     <td style={{ padding: '12px' }}>{new Date(loan.issueDate).toLocaleDateString()}</td>
                                     <td style={{ padding: '12px' }}>{loan.returnDate ? new Date(loan.returnDate).toLocaleDateString() : '---'}</td>
                                     <td style={{ padding: '12px' }}>

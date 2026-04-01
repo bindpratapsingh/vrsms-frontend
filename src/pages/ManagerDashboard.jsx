@@ -8,7 +8,7 @@ const ManagerDashboard = () => {
     const [message, setMessage] = useState({ type: '', text: '' });
     
     // Stats & Config State
-    const [stats, setStats] = useState({ totalRevenue: 0, totalCost: 0, netProfit: 0, totalInventoryCount: 0, inventory: [], loans: [] });
+    const [stats, setStats] = useState({ totalRevenue: 0, totalCost: 0, netProfit: 0, totalInventoryCount: 0, inventory: [], loans: [], members: [] });
     const [config, setConfig] = useState({ maxRentalDays: '', lateFeePerDay: '' });
 
     // Inventory Form State
@@ -18,7 +18,10 @@ const ManagerDashboard = () => {
     const [purchasePrice, setPurchasePrice] = useState('');
     const [dailyRate, setDailyRate] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+    const [quantity, setQuantity] = useState(1); // Tracker for quantity!
 
+    const [editingId, setEditingId] = useState(null); // Tracks which item is being edited
+    
     // Toggle State for Ledgers
     const [activeView, setActiveView] = useState(null); // 'CATALOG' or 'REVENUE'
 
@@ -33,11 +36,24 @@ const ManagerDashboard = () => {
 
     const fetchDashboardData = async () => {
         try {
+            // 1. Fetch normal stats
             const statsRes = await api.get('/manager/stats');
+            
+            // 2. Safely fetch members separately!
+            let fetchedMembers = [];
+            try {
+                const membersRes = await api.get('/staff/members/all'); 
+                fetchedMembers = membersRes.data || [];
+            } catch (memberError) {
+                console.error("MEMBER FETCH ERROR:", memberError.response?.data || memberError.message);
+                // If it fails, it will now print the exact reason to your F12 console!
+            }
+
             setStats({
                 ...statsRes.data,
                 inventory: statsRes.data.inventory || [],
-                loans: statsRes.data.loans || []
+                loans: statsRes.data.loans || [],
+                members: fetchedMembers // <-- Inject the safe array here
             });
 
             const configRes = await api.get('/manager/config');
@@ -52,23 +68,57 @@ const ManagerDashboard = () => {
         navigate('/');
     };
 
-   const handleAddInventory = async (e) => {
+    // --- NEW COMBINED SUBMIT HANDLER (Handles both Add and Edit) ---
+    const handleInventorySubmit = async (e) => {
         e.preventDefault();
+        
+        const payload = { 
+            title, category, format, 
+            purchasePrice: parseFloat(purchasePrice), 
+            dailyRate: parseFloat(dailyRate),
+            imageUrl: imageUrl,
+            quantity: parseInt(quantity) // Send quantity to Java!
+        };
+
         try {
-            // Include imageUrl in the payload!
-            await api.post('/inventory/add', { 
-                title, category, format, 
-                purchasePrice: parseFloat(purchasePrice), 
-                dailyRate: parseFloat(dailyRate),
-                imageUrl: imageUrl 
-            });
-            setMessage({ type: 'success', text: `Added "${title}" to inventory!` });
-            // Clear the form
-            setTitle(''); setCategory(''); setPurchasePrice(''); setDailyRate(''); setImageUrl('');
+            if (editingId) {
+                // If we are editing, send a PUT request to the edit endpoint
+                await api.put(`/inventory/edit/${editingId}`, payload);
+                setMessage({ type: 'success', text: `Successfully updated "${title}"!` });
+            } else {
+                // If not editing, create a new item
+                await api.post('/inventory/add', payload);
+                setMessage({ type: 'success', text: `Added "${title}" to inventory!` });
+            }
+            
+            // Clear the form and reset the editing state
+            resetForm();
+            setQuantity(1);
             fetchDashboardData(); 
         } catch (error) {
-            setMessage({ type: 'error', text: 'Failed to add item.' });
+            console.error("EDIT ERROR:", error); 
+            setMessage({ type: 'error', text: error.response?.data || 'Failed to save. Check F12 Console.' });
         }
+    };
+
+    // --- NEW EDIT BUTTON CLICK HANDLER ---
+    const handleEditClick = (item) => {
+        setTitle(item.title);
+        setCategory(item.category || '');
+        setFormat(item.format);
+        setPurchasePrice(item.purchasePrice);
+        setDailyRate(item.dailyRate);
+        setImageUrl(item.imageUrl || '');
+        setEditingId(item.itemId); // Set the tracker!
+        
+        // Smoothly scroll down to the form
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    };
+
+    const resetForm = () => {
+        setTitle(''); setCategory(''); setFormat('Blu-Ray'); 
+        setPurchasePrice(''); setDailyRate(''); setImageUrl('');
+        setEditingId(null);
     };
 
     const handleUpdateConfig = async (e) => {
@@ -121,7 +171,8 @@ const ManagerDashboard = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
                 <StatCard title="Total Revenue" value={`₹${stats.totalRevenue.toFixed(2)}`} color="#2e7d32" onClickTarget="REVENUE" />
                 <StatCard title="Total Asset Cost" value={`₹${stats.totalCost.toFixed(2)}`} color="#d32f2f" onClickTarget="CATALOG" />
-                
+                <StatCard title="Registered Members" value={stats.members.length} color="#0284c7" onClickTarget="MEMBERS" />
+
                 <div style={{ background: '#1a1a1a', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
                     <h3 style={{ color: '#aaa', fontSize: '14px', margin: '0 0 10px 0' }}>Net Profit / Loss</h3>
                     <p style={{ fontSize: '24px', fontWeight: 'bold', margin: 0, color: stats.netProfit >= 0 ? '#4caf50' : '#ef5350' }}>
@@ -144,6 +195,8 @@ const ManagerDashboard = () => {
                                 <th style={{ padding: '12px' }}>Status</th>
                                 <th style={{ padding: '12px' }}>Purchase Cost</th>
                                 <th style={{ padding: '12px' }}>Daily Rate</th>
+                                {/* ADDED ACTION COLUMN HEADER */}
+                                <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -151,9 +204,22 @@ const ManagerDashboard = () => {
                                 <tr key={item.itemId} style={{ borderBottom: '1px solid #eee' }}>
                                     <td style={{ padding: '12px', fontWeight: 'bold' }}>{item.title}</td>
                                     <td style={{ padding: '12px' }}>{item.format}</td>
-                                    <td style={{ padding: '12px' }}>{item.status}</td>
+                                    <td style={{ padding: '12px' }}>
+                                        <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', backgroundColor: item.status === 'AVAILABLE' ? '#e8f5e9' : '#fff3e0', color: item.status === 'AVAILABLE' ? '#2e7d32' : '#e65100' }}>
+                                            {item.status}
+                                        </span>
+                                    </td>
                                     <td style={{ padding: '12px', color: '#d32f2f' }}>₹{item.purchasePrice}</td>
                                     <td style={{ padding: '12px', color: '#2e7d32' }}>₹{item.dailyRate}/day</td>
+                                    {/* ADDED THE EDIT BUTTON */}
+                                    <td style={{ padding: '12px', textAlign: 'right' }}>
+                                        <button 
+                                            onClick={() => handleEditClick(item)} 
+                                            style={{ backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                                        >
+                                            Edit
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -191,54 +257,131 @@ const ManagerDashboard = () => {
                     </table>
                 </div>
             )}
+                {/* NEW: EXPANDABLE MEMBERS LEDGER */}
+    {activeView === 'MEMBERS' && (
+        <div style={{ background: '#fff', border: '1px solid #0284c7', borderRadius: '8px', padding: '20px', marginBottom: '40px', overflowX: 'auto' }}>
+            <h3 style={{ marginTop: 0, color: '#0284c7' }}>Registered Members Database</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                    <tr style={{ background: '#f0f9ff', borderBottom: '2px solid #bae6fd' }}>
+                        <th style={{ padding: '12px', width: '60px' }}>Photo</th>
+                        <th style={{ padding: '12px' }}>Full Name</th>
+                        <th style={{ padding: '12px' }}>Phone Number</th>
+                        <th style={{ padding: '12px' }}>Address</th>
+                        <th style={{ padding: '12px' }}>Deposit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {stats.members.map(member => (
+                        <tr key={member.memberId} style={{ borderBottom: '1px solid #eee' }}>
+                            <td style={{ padding: '12px' }}>
+                                <img 
+                                    src={member.photoUrl} 
+                                    alt={member.fullName}
+                                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/40x40?text=No+Pic'; }}
+                                    style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #ccc' }}
+                                />
+                            </td>
+                            <td style={{ padding: '12px', fontWeight: 'bold', color: '#111827' }}>{member.fullName}</td>
+                            <td style={{ padding: '12px', color: '#4b5563', fontFamily: 'monospace' }}>{member.phone}</td>
+                            <td style={{ padding: '12px', color: '#6b7280', fontSize: '14px' }}>{member.address}</td>
+                            <td style={{ padding: '12px' }}>
+                                <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', backgroundColor: member.depositPaid ? '#dcfce7' : '#fee2e2', color: member.depositPaid ? '#166534' : '#991b1b' }}>
+                                    {member.depositPaid ? '₹1000 Paid' : 'Pending'}
+                                </span>
+                            </td>
+                        </tr>
+                    ))}
+                    {stats.members.length === 0 && (
+                        <tr><td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>No members registered yet.</td></tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    )}
 
             {/* LOWER FORMS (INVENTORY & CONFIGURATION) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
                 
-                {/* Add Inventory Card */}
-                <div style={{ background: '#fff', padding: '30px', borderRadius: '8px', borderTop: '4px solid #2e7d32', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ marginTop: 0 }}>Add New Inventory</h3>
-                    <form onSubmit={handleAddInventory}>
+                {/* Inventory Card (Now dynamically updates color based on Edit mode!) */}
+                <div style={{ background: '#fff', padding: '30px', borderRadius: '8px', borderTop: `4px solid ${editingId ? '#f59e0b' : '#2e7d32'}`, boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ marginTop: 0, color: editingId ? '#d97706' : '#1a1a1a' }}>
+                        {editingId ? `Editing: ${title}` : 'Add New Inventory'}
+                    </h3>
+                    
+                    {/* UPDATED FORM TAG */}
+                    <form onSubmit={handleInventorySubmit}>
                         <div style={{ marginBottom: '15px' }}>
                             <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Title</label>
-                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Category</label>
-                                <input type="text" value={category} onChange={e => setCategory(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                <input type="text" value={category} onChange={e => setCategory(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
                             </div>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Format</label>
-                                <select value={format} onChange={e => setFormat(e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                                <select value={format} onChange={e => setFormat(e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}>
                                     <option value="Blu-Ray">Blu-Ray</option>
                                     <option value="DVD">DVD</option>
                                     <option value="VHS">VHS</option>
                                 </select>
                             </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Purchase Cost (₹)</label>
-                                <input type="number" step="0.01" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                <input type="number" step="0.01" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
                             </div>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Daily Rate (₹)</label>
-                                <input type="number" step="0.01" value={dailyRate} onChange={e => setDailyRate(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                <input type="number" step="0.01" value={dailyRate} onChange={e => setDailyRate(e.target.value)} required style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
                             </div>
-                            {/* Add this block right above the submit button! */}
-                        <div style={{ marginBottom: '20px' }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Poster Image URL</label>
-                            <input 
-                                type="text" 
-                                placeholder="https://..."
-                                value={imageUrl} 
-                                onChange={e => setImageUrl(e.target.value)} 
-                                style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} 
-                            />
                         </div>
+                        
+                        {/* --- THE NEW SAFELY MOUNTED QUANTITY BLOCK --- */}
+                        <div style={{ display: 'grid', gridTemplateColumns: editingId ? '1fr' : '2fr 1fr', gap: '15px', marginBottom: '25px' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Poster Image URL</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="https://..."
+                                    value={imageUrl} 
+                                    onChange={e => setImageUrl(e.target.value)} 
+                                    style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} 
+                                />
+                            </div>
+                            
+                            {/* ONLY SHOW QUANTITY IF WE ARE ADDING NEW ITEMS, NOT EDITING! */}
+                            {!editingId && (
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Quantity</label>
+                                    <input 
+                                        type="number" 
+                                        min="1" 
+                                        value={quantity} 
+                                        onChange={e => setQuantity(e.target.value)} 
+                                        required 
+                                        style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', backgroundColor: '#e8f5e9' }} 
+                                    />
+                                </div>
+                            )}
                         </div>
-                        <button type="submit" style={{ width: '100%', backgroundColor: '#2e7d32', color: 'white', padding: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Add to Catalog</button>
+
+                        {/* UPDATED BUTTONS BLOCK */}
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button type="submit" style={{ flex: 1, backgroundColor: editingId ? '#f59e0b' : '#2e7d32', color: 'white', padding: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                {editingId ? 'Save Updates' : 'Add to Catalog'}
+                            </button>
+                            
+                            {/* Cancel Button only shows up if we are editing! */}
+                            {editingId && (
+                                <button type="button" onClick={resetForm} style={{ backgroundColor: '#ef4444', color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                    Cancel
+                                </button>
+                            )}
+                        </div>
                     </form>
                 </div>
 
@@ -254,10 +397,10 @@ const ManagerDashboard = () => {
                                 value={config.maxRentalDays} 
                                 onChange={e => setConfig({...config, maxRentalDays: e.target.value})} 
                                 required 
-                                style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} 
+                                style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} 
                             />
                         </div>
-                        <div style={{ marginBottom: '20px' }}>
+                        <div style={{ marginBottom: '25px' }}>
                             <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>Late Fine (₹ per day)</label>
                             <input 
                                 type="number" 
@@ -265,7 +408,7 @@ const ManagerDashboard = () => {
                                 value={config.lateFeePerDay} 
                                 onChange={e => setConfig({...config, lateFeePerDay: e.target.value})} 
                                 required 
-                                style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} 
+                                style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} 
                             />
                         </div>
                         <button type="submit" style={{ width: '100%', backgroundColor: '#1a1a1a', color: 'white', padding: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save Store Rules</button>
