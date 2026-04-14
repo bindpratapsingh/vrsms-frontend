@@ -47,6 +47,7 @@ const StaffDashboard = () => {
         }
     }, [webcamRef]);
 
+    // --- FIX: ISOLATED API CALLS SO ONE FAILURE DOESN'T CRASH THE DASHBOARD ---
     const loadInitialData = useCallback(async () => {
         try {
             const resMovies = await api.get('/inventory/available');
@@ -59,13 +60,12 @@ const StaffDashboard = () => {
                 return acc;
             }, {});
             setCatalog(Object.values(groupedMovies));
+        } catch (error) { console.error("Catalog load failed", error); }
 
-            setAllMembers((await api.get('/staff/members/all')).data || []);
-            setAllTransactions((await api.get('/rentals/all')).data || []);
-            
-            try { setAvailableCoupons((await api.get('/manager/coupons/all')).data || []); } catch(e){}
-            try { setStoreConfig((await api.get('/manager/config')).data || { lateFeePerDay: 30 }); } catch(e){}
-        } catch (error) { console.error("Dashboard data load failed", error); }
+        try { setAllMembers((await api.get('/staff/members/all')).data || []); } catch(e) { console.error("Members load failed", e); }
+        try { setAllTransactions((await api.get('/rentals/all')).data || []); } catch(e) { console.error("Global Tx load failed", e); }
+        try { setAvailableCoupons((await api.get('/manager/coupons/all')).data || []); } catch(e){}
+        try { setStoreConfig((await api.get('/manager/config')).data || { lateFeePerDay: 30 }); } catch(e){}
     }, []);
 
     useEffect(() => {
@@ -223,10 +223,11 @@ const StaffDashboard = () => {
         } catch (error) { setMessage({ type: 'error', text: error.response?.data || "Registration failed." }); }
     };
 
+    // --- FIX: SAFE DATES & SAFE NAMES TO PREVENT BLANK ROWS ---
     const getFilteredTransactions = () => {
         return allTransactions.filter(tx => {
             if (txFilter === 'ALL') return true;
-            const txDate = new Date(tx.returnDate || tx.issueDate).setHours(0,0,0,0);
+            const txDate = new Date(tx.returnDate || tx.issueDate || new Date()).setHours(0,0,0,0);
             const today = new Date().setHours(0,0,0,0);
             if (txFilter === 'TODAY') return txDate === today;
             if (txFilter === 'YESTERDAY') return txDate === today - 86400000;
@@ -235,19 +236,19 @@ const StaffDashboard = () => {
                 return txDate >= new Date(txStartDate).setHours(0,0,0,0) && txDate <= new Date(txEndDate).setHours(0,0,0,0);
             }
             return true;
-        }).sort((a, b) => new Date(b.issueDate || b.returnDate) - new Date(a.issueDate || a.returnDate));
+        }).sort((a, b) => new Date(b.issueDate || b.returnDate || 0).getTime() - new Date(a.issueDate || a.returnDate || 0).getTime());
     };
 
     const getFilteredMemberHistory = () => {
         return customerHistory.filter(tx => {
             if (memberHistoryFilter === 'ALL') return true;
-            const txDate = new Date(tx.returnDate || tx.checkoutDate || tx.issueDate).setHours(0,0,0,0);
+            const txDate = new Date(tx.returnDate || tx.checkoutDate || tx.issueDate || new Date()).setHours(0,0,0,0);
             const today = new Date().setHours(0,0,0,0);
             if (memberHistoryFilter === 'TODAY') return txDate === today;
             if (memberHistoryFilter === 'LAST_7_DAYS') return txDate >= today - (7 * 86400000);
             if (memberHistoryFilter === 'LAST_30_DAYS') return txDate >= today - (30 * 86400000);
             return true;
-        }).sort((a, b) => new Date(b.checkoutDate || b.issueDate).getTime() - new Date(a.checkoutDate || a.issueDate).getTime());
+        }).sort((a, b) => new Date(b.checkoutDate || b.issueDate || 0).getTime() - new Date(a.checkoutDate || a.issueDate || 0).getTime());
     };
 
     const filteredTransactions = getFilteredTransactions();
@@ -314,19 +315,19 @@ const StaffDashboard = () => {
             
 
             {showPaymentModal && (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', maxWidth: '400px', width: '90%', position: 'relative' }}>
-            <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#9ca3af', lineHeight: '1' }}>✖</button>
-            <h2 style={{ margin: '0 0 10px 0', color: '#111827' }}>Clear Outstanding Dues</h2>
-            <p style={{ fontSize: '32px', fontWeight: '800', color: '#dc2626', margin: '10px 0' }}>₹{paymentDetails.amount.toFixed(2)}</p>
-            <div style={{ background: '#f3f4f6', padding: '20px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
-                <QRCodeSVG value={paymentDetails.upiLink} size={180} />
-            </div>
-            <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '20px' }}>To: bindpratapsingh@oksbi</p>
-            <button onClick={confirmPaymentAndClearDues} style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Confirm Payment Received</button>
-        </div>
-    </div>
-)}
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+                    <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', maxWidth: '400px', width: '90%', position: 'relative' }}>
+                        <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#9ca3af', lineHeight: '1' }}>✖</button>
+                        <h2 style={{ margin: '0 0 10px 0', color: '#111827' }}>Clear Outstanding Dues</h2>
+                        <p style={{ fontSize: '32px', fontWeight: '800', color: '#dc2626', margin: '10px 0' }}>₹{paymentDetails.amount.toFixed(2)}</p>
+                        <div style={{ background: '#f3f4f6', padding: '20px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
+                            <QRCodeSVG value={paymentDetails.upiLink} size={180} />
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '20px' }}>To: bindpratapsingh@oksbi</p>
+                        <button onClick={confirmPaymentAndClearDues} style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Confirm Payment Received</button>
+                    </div>
+                </div>
+            )}
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '2px solid #e5e7eb', paddingBottom: '10px', overflowX: 'auto' }}>
                 <button onClick={() => { setDashboardTab('COUNTER'); setMessage({type:'', text:''}); }} style={{ padding: '10px 20px', fontSize: '16px', fontWeight: 'bold', border: 'none', background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap', color: dashboardTab === 'COUNTER' ? '#2563eb' : '#6b7280', borderBottom: dashboardTab === 'COUNTER' ? '3px solid #2563eb' : 'none' }}>Checkout Counter</button>
@@ -512,18 +513,25 @@ const StaffDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredTransactions.map(tx => (
+                                {/* --- FIX: SAFE NAMES & TITLES IN GLOBAL LEDGER --- */}
+                                {filteredTransactions.map(tx => {
+                                    const title = tx.itemTitle || tx.item?.title || tx.inventoryItem?.title || 'Unknown Title';
+                                    const memberName = tx.memberName || tx.member?.fullName || 'Unknown Member';
+                                    return (
                                     <tr key={tx.loanId} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                         <td style={{ padding: '12px', fontFamily: 'monospace', color: '#6b7280' }}>{tx.loanId.substring(0, 8)}</td>
-                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#111827' }}>{tx.memberName}</td>
-                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#374151' }}>{tx.itemTitle}</td>
+                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#111827' }}>{memberName}</td>
+                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#374151' }}>{title}</td>
                                         <td style={{ padding: '12px', color: '#4b5563' }}>{new Date(tx.issueDate || tx.checkoutDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</td>
                                         <td style={{ padding: '12px', color: '#4b5563' }}>{tx.returnDate ? new Date(tx.returnDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Pending...'}</td>
                                         <td style={{ padding: '12px' }}><span style={{ background: tx.status === 'RETURNED' ? '#dcfce7' : '#fef3c7', color: tx.status === 'RETURNED' ? '#166534' : '#92400e', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{tx.status}</span></td>
                                         <td style={{ padding: '12px', fontWeight: 'bold', color: tx.status === 'ACTIVE' ? '#9ca3af' : '#166534', textAlign: 'right' }}>{tx.status === 'ACTIVE' ? 'Pending...' : `₹${tx.rentAmount || '0.00'}`}</td>
                                         <td style={{ padding: '12px', fontWeight: 'bold', color: tx.status === 'ACTIVE' ? '#9ca3af' : '#dc2626', textAlign: 'right' }}>{tx.status === 'ACTIVE' ? 'Pending...' : `₹${tx.fineAmount || '0.00'}`}</td>
                                     </tr>
-                                ))}
+                                )})}
+                                {filteredTransactions.length === 0 && (
+                                    <tr><td colSpan="8" style={{ padding: '30px', textAlign: 'center', color: '#9ca3af', fontStyle: 'italic' }}>No global transactions found.</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
