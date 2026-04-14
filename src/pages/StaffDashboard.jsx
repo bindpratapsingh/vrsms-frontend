@@ -27,12 +27,15 @@ const StaffDashboard = () => {
     const [availableCoupons, setAvailableCoupons] = useState([]);
     const [storeConfig, setStoreConfig] = useState({ lateFeePerDay: 30 });
 
-    const [returnModal, setReturnModal] = useState({ show: false, loan: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [paymentDetails, setPaymentDetails] = useState({ amount: 0, upiLink: '' });
 
     const [isEditingCustomer, setIsEditingCustomer] = useState(false);
     const [editCustomerForm, setEditCustomerForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '' });
     const [regForm, setRegForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '', depositPaid: false });
     const webcamRef = useRef(null);
+
+    const [returnModal, setReturnModal] = useState({ show: false, loan: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
 
     const capturePhoto = useCallback(() => {
         if (webcamRef.current) {
@@ -117,6 +120,23 @@ const StaffDashboard = () => {
     const handleEditClick = () => {
         setEditCustomerForm({ fullName: foundCustomer.fullName || '', phone: foundCustomer.phone ? foundCustomer.phone.replace('+91', '') : '', address: foundCustomer.address || '', photoUrl: foundCustomer.photoUrl || '' });
         setIsEditingCustomer(true);
+    };
+
+    const handlePayDues = () => {
+        const amount = foundCustomer.currentDues || 0;
+        setPaymentDetails({ amount: amount, upiLink: `upi://pay?pa=bindpratapsingh@oksbi&pn=VRSMS&am=${amount}&cu=INR` });
+        setShowPaymentModal(true);
+    };
+
+    const confirmPaymentAndClearDues = async () => {
+        setShowPaymentModal(false);
+        if (foundCustomer && paymentDetails.amount > 0) {
+            try {
+                await api.post(`/staff/members/${foundCustomer.userId}/clear-dues`);
+                setMessage({ type: 'success', text: "Payment confirmed via UPI and Account Unlocked!" });
+                refreshCustomerData(foundCustomer.phone); 
+            } catch (e) { console.error("Failed to auto-clear dues", e); }
+        }
     };
 
     const handleClearDues = async () => {
@@ -291,6 +311,22 @@ const StaffDashboard = () => {
                 <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#111827', margin: 0 }}>Staff Dashboard</h1>
                 <button onClick={() => { localStorage.removeItem('vrsms_user'); navigate('/'); }} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontWeight: '600' }}>Logout</button>
             </div>
+            
+
+            {showPaymentModal && (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', maxWidth: '400px', width: '90%', position: 'relative' }}>
+            <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#9ca3af', lineHeight: '1' }}>✖</button>
+            <h2 style={{ margin: '0 0 10px 0', color: '#111827' }}>Clear Outstanding Dues</h2>
+            <p style={{ fontSize: '32px', fontWeight: '800', color: '#dc2626', margin: '10px 0' }}>₹{paymentDetails.amount.toFixed(2)}</p>
+            <div style={{ background: '#f3f4f6', padding: '20px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
+                <QRCodeSVG value={paymentDetails.upiLink} size={180} />
+            </div>
+            <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '20px' }}>To: bindpratapsingh@oksbi</p>
+            <button onClick={confirmPaymentAndClearDues} style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Confirm Payment Received</button>
+        </div>
+    </div>
+)}
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '2px solid #e5e7eb', paddingBottom: '10px', overflowX: 'auto' }}>
                 <button onClick={() => { setDashboardTab('COUNTER'); setMessage({type:'', text:''}); }} style={{ padding: '10px 20px', fontSize: '16px', fontWeight: 'bold', border: 'none', background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap', color: dashboardTab === 'COUNTER' ? '#2563eb' : '#6b7280', borderBottom: dashboardTab === 'COUNTER' ? '3px solid #2563eb' : 'none' }}>Checkout Counter</button>
