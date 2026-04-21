@@ -32,7 +32,9 @@ const StaffDashboard = () => {
 
     const [isEditingCustomer, setIsEditingCustomer] = useState(false);
     const [editCustomerForm, setEditCustomerForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '' });
-    const [regForm, setRegForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '', depositPaid: false });
+    const [regForm, setRegForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '', depositPaid: false, otp: '' });
+    const [otpSent, setOtpSent] = useState(false);
+    const [otpVerified, setOtpVerified] = useState(false);
     const webcamRef = useRef(null);
 
     const [returnModal, setReturnModal] = useState({ show: false, loan: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
@@ -172,7 +174,10 @@ const StaffDashboard = () => {
         }
         
         let rent = dRate * daysKept;
-        let discountAmt = rent * (returnModal.appliedDiscount / 100.0);
+        // SANITIZATION: Cap the visual discount at 100%
+        let safeDiscount = returnModal.appliedDiscount > 100 ? 100 : (returnModal.appliedDiscount < 0 ? 0 : returnModal.appliedDiscount);
+        let discountAmt = rent * (safeDiscount / 100.0);
+        
         rent = rent - discountAmt;
         
         let fine = 0;
@@ -209,6 +214,50 @@ const StaffDashboard = () => {
 
     const closeCheckout = () => {
         setReturnModal({ show: false, step: 1, loanId: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
+    };
+
+    const handleSendOtp = async () => {
+        // 1. CLEAR PREVIOUS ERRORS
+        setMessage({ type: '', text: '' });
+
+        // 2. STRICT FRONTEND VALIDATION
+        // Checks that it is exactly 10 digits and starts with 6, 7, 8, or 9
+        const phoneRegex = /^[6-9]\d{9}$/; 
+        
+        if (!regForm.phone) {
+            setMessage({ type: 'error', text: "Please enter a phone number before sending an OTP." });
+            return;
+        }
+        
+        if (!phoneRegex.test(regForm.phone)) {
+            setMessage({ type: 'error', text: "Invalid Number. Please enter a valid 10-digit Indian mobile number." });
+            return;
+        }
+
+        // 3. API CALL
+        try {
+            await api.post(`/staff/send-registration-otp?phone=${encodeURIComponent('+91' + regForm.phone)}`);
+            setOtpSent(true);
+            setMessage({ type: 'success', text: "OTP Sent successfully! Please verify it below." });
+        } catch (error) {
+            // If the backend catches a duplicate or throws an error, display it in red!
+            setMessage({ type: 'error', text: error.response?.data || "Failed to send OTP. Please try again." });
+        }
+    };
+
+    const handleVerifyOtp = async () => {
+        if (!regForm.otp || regForm.otp.length !== 6) {
+            setMessage({ type: 'error', text: "Please enter the 6-digit OTP." });
+            return;
+        }
+
+        try {
+            await api.post(`/staff/verify-registration-otp?phone=${encodeURIComponent('+91' + regForm.phone)}&otp=${regForm.otp}`);
+            setOtpVerified(true);
+            setMessage({ type: 'success', text: "Phone verified! You can now complete the registration." });
+        } catch (error) {
+            setMessage({ type: 'error', text: error.response?.data || "Invalid OTP." });
+        }
     };
 
     const handleRegisterMember = async (e) => {
@@ -542,30 +591,60 @@ const StaffDashboard = () => {
                 <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto' }}>
                     <h2 style={{ marginTop: 0, color: '#111827', marginBottom: '24px' }}>New Member Registration</h2>
                     <form onSubmit={handleRegisterMember}>
-                        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Full Name</label><input type="text" required value={regForm.fullName} onChange={e => setRegForm({...regForm, fullName: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="John Doe" /></div>
-                        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Mobile Number</label><input type="text" required value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="10-digit mobile number" /></div>
-                        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Physical Address</label><textarea required value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box', minHeight: '80px' }} placeholder="Full residential address" /></div>
-                        <div style={{ marginBottom: '24px' }}>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Member Live Photo</label>
-                            {regForm.photoUrl ? (
-                                <div style={{ textAlign: 'center' }}>
-                                    <img src={regForm.photoUrl} alt="Captured" style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '2px solid #059669', marginBottom: '10px' }} />
-                                    <input type="text" value={regForm.photoUrl} onChange={e => setRegForm({...regForm, photoUrl: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db', boxSizing: 'border-box', marginBottom: '10px' }} placeholder="Edit URL if needed..." />
-                                    <button type="button" onClick={() => setRegForm({...regForm, photoUrl: ''})} style={{ display: 'block', width: '100%', padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retake / Clear Photo</button>
-                                </div>
-                            ) : (
-                                <div style={{ textAlign: 'center', background: '#111', padding: '15px', borderRadius: '8px' }}>
-                                    <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: "user" }} style={{ width: '100%', maxWidth: '300px', borderRadius: '4px', marginBottom: '10px' }} />
-                                    <button type="button" onClick={capturePhoto} style={{ display: 'block', width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '10px' }}>📸 Capture Photo</button>
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ marginBottom: '24px', padding: '16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <input type="checkbox" id="deposit" checked={regForm.depositPaid} onChange={e => setRegForm({...regForm, depositPaid: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
-                            <label htmlFor="deposit" style={{ fontWeight: '700', color: '#92400e', cursor: 'pointer' }}>I confirm that the ₹1000 Security Deposit has been collected from the customer.</label>
-                        </div>
-                        <button type="submit" style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '16px', cursor: 'pointer' }}>Register & Activate Member</button>
-                    </form>
+    <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Full Name</label><input type="text" required disabled={otpSent} value={regForm.fullName} onChange={e => setRegForm({...regForm, fullName: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="John Doe" /></div>
+    
+    <div style={{ marginBottom: '16px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Mobile Number</label>
+        <div style={{ display: 'flex', gap: '10px' }}>
+            <span style={{ padding: '12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: 'bold' }}>+91</span>
+            <input type="text" required disabled={otpSent} value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="10-digit mobile number" />
+            {!otpSent && <button type="button" onClick={handleSendOtp} style={{ padding: '0 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Send OTP</button>}
+        </div>
+    </div>
+
+    {/* EXPLICIT VERIFICATION STEP */}
+    {otpSent && !otpVerified && (
+        <div style={{ marginBottom: '16px', padding: '16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#1d4ed8' }}>Enter 6-Digit Verification Code</label>
+            <input type="text" required value={regForm.otp} onChange={e => setRegForm({...regForm, otp: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #93c5fd', fontSize: '18px', letterSpacing: '4px', textAlign: 'center', fontWeight: 'bold', outline: 'none', marginBottom: '12px' }} placeholder="000000" maxLength="6" />
+            <button type="button" onClick={handleVerifyOtp} style={{ width: '100%', padding: '12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Verify OTP</button>
+        </div>
+    )}
+
+    {/* SUCCESS INDICATOR */}
+    {otpVerified && (
+        <div style={{ marginBottom: '16px', padding: '12px', background: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', color: '#166534', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            ✅ Phone Number Verified Successfully
+        </div>
+    )}
+
+    {/* REST OF FORM UNLOCKS ONLY AFTER VERIFICATION */}
+    <div style={{ opacity: otpVerified ? 1 : 0.4, pointerEvents: otpVerified ? 'auto' : 'none', transition: 'opacity 0.3s' }}>
+        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Physical Address</label><textarea required disabled={!otpVerified} value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box', minHeight: '80px' }} placeholder="Full residential address" /></div>
+        
+        <div style={{ marginBottom: '24px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Member Live Photo</label>
+            {regForm.photoUrl ? (
+                <div style={{ textAlign: 'center' }}>
+                    <img src={regForm.photoUrl} alt="Captured" style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '2px solid #059669', marginBottom: '10px' }} />
+                    <button type="button" onClick={() => setRegForm({...regForm, photoUrl: ''})} style={{ display: 'block', width: '100%', padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retake Photo</button>
+                </div>
+            ) : (
+                <div style={{ textAlign: 'center', background: '#111', padding: '15px', borderRadius: '8px' }}>
+                    <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: "user" }} style={{ width: '100%', maxWidth: '300px', borderRadius: '4px', marginBottom: '10px' }} />
+                    <button type="button" onClick={capturePhoto} disabled={!otpVerified} style={{ display: 'block', width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '10px' }}>📸 Capture Photo</button>
+                </div>
+            )}
+        </div>
+        
+        <div style={{ marginBottom: '24px', padding: '16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <input type="checkbox" id="deposit" disabled={!otpVerified} checked={regForm.depositPaid} onChange={e => setRegForm({...regForm, depositPaid: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+            <label htmlFor="deposit" style={{ fontWeight: '700', color: '#92400e', cursor: 'pointer' }}>I confirm that the ₹1000 Security Deposit has been collected.</label>
+        </div>
+        
+        <button type="submit" disabled={!otpVerified} style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', fontSize: '18px', cursor: 'pointer' }}>Complete Registration</button>
+    </div>
+</form>
                 </div>
             )}
         </div>
