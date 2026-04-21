@@ -143,6 +143,26 @@ const ManagerDashboard = () => {
         }
     };
 
+    const handleCreateCoupon = async (e) => {
+        e.preventDefault();
+
+        const discountNum = Number(newCoupon.discountPercentage);
+
+        if (discountNum < 0 || discountNum > 100) {
+            alert(`❌ INVALID DISCOUNT: You cannot set a discount of ${discountNum}%. It must be exactly between 0 and 100.`);
+            return; 
+        }
+
+        try {
+            await api.post('/manager/coupons/add', newCoupon);
+            fetchDashboardData();
+            setNewCoupon({code:'', discountPercentage:''});
+            setMessage({ type: 'success', text: `Successfully created coupon ${newCoupon.code.toUpperCase()}!` });
+        } catch (error) {
+            alert(typeof error.response?.data === 'string' ? error.response.data : "Failed to create coupon.");
+        }
+    };
+
     const getFilteredTransactions = () => {
         return (stats.loans || []).filter(tx => {
             if (txFilter === 'ALL') return true;
@@ -333,8 +353,8 @@ const ManagerDashboard = () => {
                     <h3 style={{ color: '#7c3aed', marginTop: 0, fontSize: '20px' }}>Coupon Management</h3>
                     <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', background: '#f5f3ff', padding: '16px', borderRadius: '8px', border: '1px dashed #c4b5fd' }}>
                         <input type="text" placeholder="CODE (e.g. SUMMER50)" value={newCoupon.code} onChange={e => setNewCoupon({...newCoupon, code: e.target.value.toUpperCase()})} style={{ flex: 1, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none', fontWeight: 'bold' }} />
-                        <input type="number" placeholder="Discount %" value={newCoupon.discountPercentage} onChange={e => setNewCoupon({...newCoupon, discountPercentage: e.target.value})} style={{ padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '6px', width: '120px', outline: 'none' }} />
-                        <button onClick={async () => { await api.post('/manager/coupons/add', newCoupon); fetchDashboardData(); setNewCoupon({code:'', discountPercentage:''}); }} style={{ background: '#8b5cf6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Create Coupon</button>
+                        <input type="number" min="0" max="100" placeholder="Discount %" value={newCoupon.discountPercentage} onChange={e => setNewCoupon({...newCoupon, discountPercentage: e.target.value})} style={{ padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '6px', width: '120px', outline: 'none' }} />
+                        <button onClick={handleCreateCoupon} style={{ background: '#8b5cf6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Create Coupon</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead><tr style={{ textAlign: 'left', background: '#f5f3ff', borderBottom: '2px solid #ddd6fe' }}><th style={{ padding: '12px', color: '#6d28d9' }}>Promo Code</th><th style={{ padding: '12px', color: '#6d28d9' }}>Discount Applied</th><th style={{ padding: '12px', color: '#6d28d9', textAlign: 'right' }}>Action</th></tr></thead>
