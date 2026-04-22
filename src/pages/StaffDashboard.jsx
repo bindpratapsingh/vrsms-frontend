@@ -405,24 +405,57 @@ const StaffDashboard = () => {
                             )}
 
                             {foundCustomer && !isEditingCustomer && (
-                                <div style={{ marginTop: '16px', padding: '16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #e0f2fe', position: 'relative' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                        <img src={foundCustomer.photoUrl || `https://placehold.co/80x80/0284c7/white?text=${foundCustomer.fullName.charAt(0)}`} alt="Profile" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: '2px solid #0284c7' }} />
-                                        <div><p style={{ margin: 0, color: '#0369a1', fontWeight: '700', fontSize: '18px' }}>✓ {foundCustomer.fullName}</p><p style={{ margin: '4px 0 0 0', color: '#0284c7', fontSize: '14px', fontFamily: 'monospace' }}>{foundCustomer.phone}</p></div>
-                                    </div>
-                                    <div style={{ marginTop: '15px', borderTop: '1px solid #bae6fd', paddingTop: '15px' }}>
-                                        <p style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: foundCustomer.currentDues > 0 ? '#dc2626' : '#166534' }}>Account Balance: {foundCustomer.currentDues > 0 ? `₹${foundCustomer.currentDues.toFixed(2)} Due` : 'Clear'}</p>
-                                        {foundCustomer.currentDues > 0 && (
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                <button onClick={handlePayDues} style={{ flex: 1, padding: '8px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>📱 Pay via UPI</button>
-                                                <button onClick={handleClearDues} style={{ flex: 1, padding: '8px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>💵 Cash / Waive</button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <button onClick={handleEditClick} style={{ position: 'absolute', top: '16px', right: '16px', padding: '6px 12px', background: 'white', color: '#0284c7', border: '1px solid #0284c7', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>Edit Profile</button>
-                                </div>
-                            )}
-
+    <div style={{ marginTop: '16px', padding: '16px', background: foundCustomer.isActive === false ? '#fef2f2' : '#f0f9ff', borderRadius: '8px', border: `1px solid ${foundCustomer.isActive === false ? '#fca5a5' : '#e0f2fe'}`, position: 'relative' }}>
+        
+        {/* --- CANCELLATION OVERRIDE VIEW --- */}
+        {foundCustomer.isActive === false ? (
+            <div style={{ textAlign: 'center', padding: '10px' }}>
+                <h3 style={{ color: '#991b1b', marginTop: 0, fontSize: '20px' }}>🚨 Account Cancelled 🚨</h3>
+                <p style={{ color: '#7f1d1d', marginBottom: '20px' }}>This membership was cancelled by management. The user cannot rent movies.</p>
+                <button 
+                    onClick={async () => {
+        if(window.confirm("Confirm collection of a NEW ₹1000 Security Deposit to restore this account?")) {
+            try {
+                // 1. Tell the backend to restore them
+                await api.put(`/staff/members/${foundCustomer.userId}/restore`);
+                
+                // 2. INSTANT UI UPDATE: Flip the active switch in React's memory!
+                setFoundCustomer(prev => ({ ...prev, isActive: true })); 
+                
+                // 3. Refresh the global data in the background so the dropdowns update
+                refreshCustomerData(foundCustomer.phone); 
+                
+            } catch (err) {
+                alert(err.response?.data || "Failed to restore");
+            }
+        }
+    }}
+                    style={{ padding: '12px 24px', background: '#10b981', color: 'white', fontWeight: 'bold', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '16px', boxShadow: '0 4px 6px rgba(16, 185, 129, 0.2)' }}
+                >
+                    Collect ₹1000 & Restore Account
+                </button>
+            </div>
+        ) : (
+            /* --- NORMAL ACTIVE CUSTOMER VIEW --- */
+            <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <img src={foundCustomer.photoUrl || `https://placehold.co/80x80/0284c7/white?text=${foundCustomer.fullName.charAt(0)}`} alt="Profile" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: '2px solid #0284c7' }} />
+                    <div><p style={{ margin: 0, color: '#0369a1', fontWeight: '700', fontSize: '18px' }}>✓ {foundCustomer.fullName}</p><p style={{ margin: '4px 0 0 0', color: '#0284c7', fontSize: '14px', fontFamily: 'monospace' }}>{foundCustomer.phone}</p></div>
+                </div>
+                <div style={{ marginTop: '15px', borderTop: '1px solid #bae6fd', paddingTop: '15px' }}>
+                    <p style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: foundCustomer.currentDues > 0 ? '#dc2626' : '#166534' }}>Account Balance: {foundCustomer.currentDues > 0 ? `₹${foundCustomer.currentDues.toFixed(2)} Due` : 'Clear'}</p>
+                    {foundCustomer.currentDues > 0 && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={handlePayDues} style={{ flex: 1, padding: '8px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>📱 Pay via UPI</button>
+                            <button onClick={handleClearDues} style={{ flex: 1, padding: '8px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>💵 Cash / Waive</button>
+                        </div>
+                    )}
+                </div>
+                <button onClick={handleEditClick} style={{ position: 'absolute', top: '16px', right: '16px', padding: '6px 12px', background: 'white', color: '#0284c7', border: '1px solid #0284c7', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>Edit Profile</button>
+            </>
+        )}
+    </div>
+)}
                             {foundCustomer && isEditingCustomer && (
                                 <div style={{ marginTop: '16px', padding: '16px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a' }}>
                                     <h4 style={{ margin: '0 0 12px 0', color: '#92400e' }}>Edit Customer</h4>
@@ -435,18 +468,22 @@ const StaffDashboard = () => {
                             )}
                         </div>
 
-                        <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', opacity: foundCustomer ? 1 : 0.6 }}>
-                            <h3 style={{ marginTop: 0, fontSize: '18px', color: '#111827', marginBottom: '20px' }}>2. Issue Movie</h3>
-                            <select value={selectedMovieId} onChange={e => setSelectedMovieId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '16px', marginBottom: '16px', background: 'white' }}>
-                                <option value="">-- Select Movie --</option>
-                                {catalog.map((group, idx) => (<option key={idx} value={group.itemIds[0]}>{group.title} ({group.format}) - {group.count} Available</option>))}
-                            </select>
-                            {foundCustomer && foundCustomer.currentDues > 0 && (
-                                <div style={{ padding: '10px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginBottom: '16px', fontWeight: 'bold', fontSize: '14px', textAlign: 'center', border: '1px solid #f87171' }}>⚠️ Customer must clear outstanding dues before renting.</div>
-                            )}
-                            <button onClick={handleIssueRental} disabled={!foundCustomer || foundCustomer.currentDues > 0} style={{ width: '100%', padding: '14px', background: (!foundCustomer || foundCustomer.currentDues > 0) ? '#9ca3af' : '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '16px', cursor: (!foundCustomer || foundCustomer.currentDues > 0) ? 'not-allowed' : 'pointer' }}>Complete Checkout</button>
-                        </div>
-                    </div>
+                       {/* Hide the issue box completely if they are cancelled! */}
+                        {(!foundCustomer || foundCustomer.isActive !== false) && (
+                            <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', opacity: foundCustomer ? 1 : 0.6 }}>
+                                <h3 style={{ marginTop: 0, fontSize: '18px', color: '#111827', marginBottom: '20px' }}>2. Issue Movie</h3>
+                                <select value={selectedMovieId} onChange={e => setSelectedMovieId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '16px', marginBottom: '16px', background: 'white' }}>
+                                    <option value="">-- Select Movie --</option>
+                                    {catalog.map((group, idx) => (<option key={idx} value={group.itemIds[0]}>{group.title} ({group.format}) - {group.count} Available</option>))}
+                                </select>
+                                {foundCustomer && foundCustomer.currentDues > 0 && (
+                                    <div style={{ padding: '10px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginBottom: '16px', fontWeight: 'bold', fontSize: '14px', textAlign: 'center', border: '1px solid #f87171' }}>⚠️ Customer must clear outstanding dues before renting.</div>
+                                )}
+                                <button onClick={handleIssueRental} disabled={!foundCustomer || foundCustomer.currentDues > 0} style={{ width: '100%', padding: '14px', background: (!foundCustomer || foundCustomer.currentDues > 0) ? '#9ca3af' : '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '16px', cursor: (!foundCustomer || foundCustomer.currentDues > 0) ? 'not-allowed' : 'pointer' }}>Complete Checkout</button>
+                            </div>
+                        )} {/* <--- THIS IS THE PROPER CLOSING BRACKET */}
+                    </div> {/* <--- THIS CLOSES THE MAIN GRID */}
+                
 
                     {foundCustomer && (
                         <>
