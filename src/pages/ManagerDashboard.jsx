@@ -163,6 +163,28 @@ const ManagerDashboard = () => {
         }
     };
 
+    // --- NEW: TOGGLE MEMBERSHIP FUNCTION ---
+    const handleToggleMembership = async (memberId, currentStatus) => {
+        const action = currentStatus === false ? "RESTORE" : "CANCEL";
+        
+        const userInput = window.prompt(
+            `🛑 SECURITY WARNING 🛑\n\nYou are about to ${action} this membership.\n\nTo confirm, please type the word ${action} exactly:`
+        );
+
+        if (userInput !== action) {
+            alert(`Action aborted. You must type "${action}" exactly to proceed.`);
+            return;
+        }
+        
+        try {
+            await api.put(`/manager/members/${memberId}/toggle-status`);
+            fetchDashboardData(); 
+            alert(`Success: Membership has been successfully ${action.toLowerCase()}ed.`);
+        } catch (error) {
+            alert(error.response?.data || "Failed to change membership status.");
+        }
+    };
+
     const getFilteredTransactions = () => {
         return (stats.loans || []).filter(tx => {
             if (txFilter === 'ALL') return true;
@@ -338,8 +360,13 @@ const ManagerDashboard = () => {
                                     <td style={{ padding: '12px' }}><span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', backgroundColor: member.depositPaid ? '#dcfce7' : '#fee2e2', color: member.depositPaid ? '#166534' : '#991b1b' }}>{member.depositPaid ? '₹1000 Paid' : 'Pending'}</span></td>
                                     {/* ADDED VIEW RENTALS BUTTON */}
                                     <td style={{ padding: '12px', textAlign: 'right' }}>
-                                        <button onClick={() => setSelectedMemberHistory(member.fullName)} style={{ padding: '6px 12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>View Rentals</button>
-                                    </td>
+    <button onClick={() => setSelectedMemberHistory(member.fullName)} style={{ padding: '6px 12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', marginRight: '8px' }}>View Rentals</button>
+    
+    {/* ADDED: KILL SWITCH BUTTON */}
+    <button onClick={() => handleToggleMembership(member.memberId, member.isActive)} style={{ padding: '6px 12px', background: member.isActive === false ? '#10b981' : '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+        {member.isActive === false ? 'Restore' : 'Cancel'}
+    </button>
+</td>
                                 </tr>
                             ))}
                             {stats.members.length === 0 && <tr><td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#9ca3af', fontStyle: 'italic' }}>No members registered yet.</td></tr>}
