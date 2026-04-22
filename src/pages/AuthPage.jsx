@@ -106,6 +106,12 @@ const AuthPage = () => {
                         value={phone}
                         disabled={otpSent}
                         onChange={(e) => setPhone(e.target.value)}
+                        onKeyDown={(e) => { 
+                            if (e.key === 'Enter') {
+                                if (activeTab === 'Staff') handleStaffLogin();
+                                else handleRequestOtp();
+                            } 
+                        }}
                         style={{ width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '16px', boxSizing: 'border-box', outline: 'none', backgroundColor: otpSent ? '#f5f5f5' : 'white' }} 
                     />
                 </div>
@@ -119,6 +125,7 @@ const AuthPage = () => {
                             placeholder="Enter your password" 
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleStaffLogin(); }}
                             style={{ width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '16px', boxSizing: 'border-box', outline: 'none' }} 
                         />
                     </div>
@@ -133,6 +140,7 @@ const AuthPage = () => {
                             placeholder="Enter the code" 
                             value={otpCode}
                             onChange={(e) => setOtpCode(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleVerifyOtp(); }}
                             style={{ width: '100%', padding: '12px', border: '1px solid #1976d2', borderRadius: '6px', fontSize: '16px', boxSizing: 'border-box', outline: 'none' }} 
                         />
                     </div>

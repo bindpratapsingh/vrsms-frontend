@@ -11,7 +11,8 @@ const MemberPortal = () => {
     const [catalog, setCatalog] = useState([]);
     const [activeRentals, setActiveRentals] = useState([]);
     const [wishlistItems, setWishlistItems] = useState([]);
-    const [rentalHistory, setRentalHistory] = useState([]); 
+    const [wishlistData, setWishlistData] = useState([]); // NEW: Holds the full movie details for the tab
+    const [rentalHistory, setRentalHistory] = useState([]);
     const [memberProfile, setMemberProfile] = useState(null); // NEW: Holds the photo!
 
     // UI Tab State
@@ -40,6 +41,7 @@ const MemberPortal = () => {
 
             // 3. Fetch wishlist
             const wishlistResponse = await api.get(`/wishlist/${userId}`);
+            setWishlistData(wishlistResponse.data);
             const savedItemIds = wishlistResponse.data.map(item => item.itemId);
             setWishlistItems(savedItemIds);
 
@@ -65,16 +67,13 @@ const MemberPortal = () => {
 
     const handleWishlistToggle = async (itemId) => {
         try {
-            const response = await api.post('/wishlist/toggle', {
-                userId: user.userId,
+            // FIX: Backend expects 'memberId', not 'userId'
+            await api.post('/wishlist/toggle', {
+                memberId: user.userId, 
                 itemId: itemId
             });
-
-            if (response.data === 'ADDED') {
-                setWishlistItems([...wishlistItems, itemId]);
-            } else {
-                setWishlistItems(wishlistItems.filter(id => id !== itemId));
-            }
+            // Refresh data so both the heart icons and the Wishlist Tab update instantly!
+            fetchMemberData(user.userId); 
         } catch (error) {
             console.error("Failed to toggle wishlist", error);
             alert("Error saving movie: " + (error.response?.data || error.message));
@@ -154,6 +153,11 @@ const MemberPortal = () => {
                     onClick={() => setActiveTab('CATALOG')}
                     style={{ padding: '10px 20px', border: 'none', background: 'none', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', color: activeTab === 'CATALOG' ? '#1976d2' : '#666', borderBottom: activeTab === 'CATALOG' ? '3px solid #1976d2' : '3px solid transparent' }}>
                     Browse Movies
+                </button>
+                <button 
+                    onClick={() => setActiveTab('WISHLIST')}
+                    style={{ padding: '10px 20px', border: 'none', background: 'none', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', color: activeTab === 'WISHLIST' ? '#d32f2f' : '#666', borderBottom: activeTab === 'WISHLIST' ? '3px solid #d32f2f' : '3px solid transparent' }}>
+                    ♥ My Wishlist
                 </button>
                 <button 
                     onClick={() => setActiveTab('HISTORY')}
@@ -253,6 +257,45 @@ const MemberPortal = () => {
                     </table>
                 </div>
             )}
+
+            {/* VIEW 3: WISHLIST */}
+            {activeTab === 'WISHLIST' && (
+                <div>
+                    <h2 style={{ marginBottom: '20px', color: '#d32f2f' }}>My Saved Movies</h2>
+                    {wishlistData.length === 0 ? (
+                        <div style={{ padding: '40px', textAlign: 'center', background: '#fff', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+                            <p style={{ color: '#666', fontSize: '16px' }}>You haven't added any movies to your wishlist yet.</p>
+                            <button onClick={() => setActiveTab('CATALOG')} style={{ padding: '10px 20px', background: '#1976d2', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', marginTop: '10px' }}>Browse Catalog</button>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                            {wishlistData.map(item => (
+                                <div key={item.itemId} style={{ border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px', background: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
+                                    <img 
+                                        src={item.imageUrl} alt={item.title} 
+                                        onError={(e) => { e.target.src = 'https://placehold.co/150x225?text=No+Poster'; }} 
+                                        style={{ width: '100%', height: 'auto', borderRadius: '4px', marginBottom: '10px' }}
+                                    />
+                                    <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', textAlign: 'center' }}>{item.title}</h3>
+                                    <p style={{ margin: '0 0 10px 0', color: '#666', fontSize: '12px', textAlign: 'center' }}>{item.format} • ₹{item.dailyRate}/day</p>
+                                    
+                                    <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <span style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: item.status === 'AVAILABLE' ? '#2e7d32' : '#d32f2f', background: item.status === 'AVAILABLE' ? '#e8f5e9' : '#ffebee', padding: '4px 8px', borderRadius: '4px' }}>
+                                            {item.status === 'AVAILABLE' ? 'In Stock' : 'Currently Rented Out'}
+                                        </span>
+                                        <button 
+                                            onClick={() => handleWishlistToggle(item.itemId)}
+                                            style={{ padding: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', backgroundColor: '#fff', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px' }}>
+                                            Remove from List
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+            
         </div>
     );
 };

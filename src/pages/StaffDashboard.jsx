@@ -27,12 +27,17 @@ const StaffDashboard = () => {
     const [availableCoupons, setAvailableCoupons] = useState([]);
     const [storeConfig, setStoreConfig] = useState({ lateFeePerDay: 30 });
 
-    const [returnModal, setReturnModal] = useState({ show: false, loan: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [paymentDetails, setPaymentDetails] = useState({ amount: 0, upiLink: '' });
 
     const [isEditingCustomer, setIsEditingCustomer] = useState(false);
     const [editCustomerForm, setEditCustomerForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '' });
-    const [regForm, setRegForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '', depositPaid: false });
+    const [regForm, setRegForm] = useState({ fullName: '', phone: '', address: '', photoUrl: '', depositPaid: false, otp: '' });
+    const [otpSent, setOtpSent] = useState(false);
+    const [otpVerified, setOtpVerified] = useState(false);
     const webcamRef = useRef(null);
+
+    const [returnModal, setReturnModal] = useState({ show: false, loan: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
 
     const capturePhoto = useCallback(() => {
         if (webcamRef.current) {
@@ -44,6 +49,7 @@ const StaffDashboard = () => {
         }
     }, [webcamRef]);
 
+    // --- FIX: ISOLATED API CALLS SO ONE FAILURE DOESN'T CRASH THE DASHBOARD ---
     const loadInitialData = useCallback(async () => {
         try {
             const resMovies = await api.get('/inventory/available');
@@ -56,13 +62,12 @@ const StaffDashboard = () => {
                 return acc;
             }, {});
             setCatalog(Object.values(groupedMovies));
+        } catch (error) { console.error("Catalog load failed", error); }
 
-            setAllMembers((await api.get('/staff/members/all')).data || []);
-            setAllTransactions((await api.get('/rentals/all')).data || []);
-            
-            try { setAvailableCoupons((await api.get('/manager/coupons/all')).data || []); } catch(e){}
-            try { setStoreConfig((await api.get('/manager/config')).data || { lateFeePerDay: 30 }); } catch(e){}
-        } catch (error) { console.error("Dashboard data load failed", error); }
+        try { setAllMembers((await api.get('/staff/members/all')).data || []); } catch(e) { console.error("Members load failed", e); }
+        try { setAllTransactions((await api.get('/rentals/all')).data || []); } catch(e) { console.error("Global Tx load failed", e); }
+        try { setAvailableCoupons((await api.get('/manager/coupons/all')).data || []); } catch(e){}
+        try { setStoreConfig((await api.get('/manager/config')).data || { lateFeePerDay: 30 }); } catch(e){}
     }, []);
 
     useEffect(() => {
@@ -119,6 +124,23 @@ const StaffDashboard = () => {
         setIsEditingCustomer(true);
     };
 
+    const handlePayDues = () => {
+        const amount = foundCustomer.currentDues || 0;
+        setPaymentDetails({ amount: amount, upiLink: `upi://pay?pa=bindpratapsingh@oksbi&pn=VRSMS&am=${amount}&cu=INR` });
+        setShowPaymentModal(true);
+    };
+
+    const confirmPaymentAndClearDues = async () => {
+        setShowPaymentModal(false);
+        if (foundCustomer && paymentDetails.amount > 0) {
+            try {
+                await api.post(`/staff/members/${foundCustomer.userId}/clear-dues`);
+                setMessage({ type: 'success', text: "Payment confirmed via UPI and Account Unlocked!" });
+                refreshCustomerData(foundCustomer.phone); 
+            } catch (e) { console.error("Failed to auto-clear dues", e); }
+        }
+    };
+
     const handleClearDues = async () => {
         if (!foundCustomer) return;
         try {
@@ -152,7 +174,10 @@ const StaffDashboard = () => {
         }
         
         let rent = dRate * daysKept;
-        let discountAmt = rent * (returnModal.appliedDiscount / 100.0);
+        // SANITIZATION: Cap the visual discount at 100%
+        let safeDiscount = returnModal.appliedDiscount > 100 ? 100 : (returnModal.appliedDiscount < 0 ? 0 : returnModal.appliedDiscount);
+        let discountAmt = rent * (safeDiscount / 100.0);
+        
         rent = rent - discountAmt;
         
         let fine = 0;
@@ -191,6 +216,50 @@ const StaffDashboard = () => {
         setReturnModal({ show: false, step: 1, loanId: null, title: '', couponInput: '', appliedDiscount: 0, appliedCode: '', error: '' });
     };
 
+    const handleSendOtp = async () => {
+        // 1. CLEAR PREVIOUS ERRORS
+        setMessage({ type: '', text: '' });
+
+        // 2. STRICT FRONTEND VALIDATION
+        // Checks that it is exactly 10 digits and starts with 6, 7, 8, or 9
+        const phoneRegex = /^[6-9]\d{9}$/; 
+        
+        if (!regForm.phone) {
+            setMessage({ type: 'error', text: "Please enter a phone number before sending an OTP." });
+            return;
+        }
+        
+        if (!phoneRegex.test(regForm.phone)) {
+            setMessage({ type: 'error', text: "Invalid Number. Please enter a valid 10-digit Indian mobile number." });
+            return;
+        }
+
+        // 3. API CALL
+        try {
+            await api.post(`/staff/send-registration-otp?phone=${encodeURIComponent('+91' + regForm.phone)}`);
+            setOtpSent(true);
+            setMessage({ type: 'success', text: "OTP Sent successfully! Please verify it below." });
+        } catch (error) {
+            // If the backend catches a duplicate or throws an error, display it in red!
+            setMessage({ type: 'error', text: error.response?.data || "Failed to send OTP. Please try again." });
+        }
+    };
+
+    const handleVerifyOtp = async () => {
+        if (!regForm.otp || regForm.otp.length !== 6) {
+            setMessage({ type: 'error', text: "Please enter the 6-digit OTP." });
+            return;
+        }
+
+        try {
+            await api.post(`/staff/verify-registration-otp?phone=${encodeURIComponent('+91' + regForm.phone)}&otp=${regForm.otp}`);
+            setOtpVerified(true);
+            setMessage({ type: 'success', text: "Phone verified! You can now complete the registration." });
+        } catch (error) {
+            setMessage({ type: 'error', text: error.response?.data || "Invalid OTP." });
+        }
+    };
+
     const handleRegisterMember = async (e) => {
         e.preventDefault();
         if (!regForm.depositPaid) { setMessage({ type: 'error', text: "Security deposit required." }); return; }
@@ -203,10 +272,11 @@ const StaffDashboard = () => {
         } catch (error) { setMessage({ type: 'error', text: error.response?.data || "Registration failed." }); }
     };
 
+    // --- FIX: SAFE DATES & SAFE NAMES TO PREVENT BLANK ROWS ---
     const getFilteredTransactions = () => {
         return allTransactions.filter(tx => {
             if (txFilter === 'ALL') return true;
-            const txDate = new Date(tx.returnDate || tx.issueDate).setHours(0,0,0,0);
+            const txDate = new Date(tx.returnDate || tx.issueDate || new Date()).setHours(0,0,0,0);
             const today = new Date().setHours(0,0,0,0);
             if (txFilter === 'TODAY') return txDate === today;
             if (txFilter === 'YESTERDAY') return txDate === today - 86400000;
@@ -215,19 +285,19 @@ const StaffDashboard = () => {
                 return txDate >= new Date(txStartDate).setHours(0,0,0,0) && txDate <= new Date(txEndDate).setHours(0,0,0,0);
             }
             return true;
-        }).sort((a, b) => new Date(b.issueDate || b.returnDate) - new Date(a.issueDate || a.returnDate));
+        }).sort((a, b) => new Date(b.issueDate || b.returnDate || 0).getTime() - new Date(a.issueDate || a.returnDate || 0).getTime());
     };
 
     const getFilteredMemberHistory = () => {
         return customerHistory.filter(tx => {
             if (memberHistoryFilter === 'ALL') return true;
-            const txDate = new Date(tx.returnDate || tx.checkoutDate || tx.issueDate).setHours(0,0,0,0);
+            const txDate = new Date(tx.returnDate || tx.checkoutDate || tx.issueDate || new Date()).setHours(0,0,0,0);
             const today = new Date().setHours(0,0,0,0);
             if (memberHistoryFilter === 'TODAY') return txDate === today;
             if (memberHistoryFilter === 'LAST_7_DAYS') return txDate >= today - (7 * 86400000);
             if (memberHistoryFilter === 'LAST_30_DAYS') return txDate >= today - (30 * 86400000);
             return true;
-        }).sort((a, b) => new Date(b.checkoutDate || b.issueDate).getTime() - new Date(a.checkoutDate || a.issueDate).getTime());
+        }).sort((a, b) => new Date(b.checkoutDate || b.issueDate || 0).getTime() - new Date(a.checkoutDate || a.issueDate || 0).getTime());
     };
 
     const filteredTransactions = getFilteredTransactions();
@@ -291,6 +361,22 @@ const StaffDashboard = () => {
                 <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#111827', margin: 0 }}>Staff Dashboard</h1>
                 <button onClick={() => { localStorage.removeItem('vrsms_user'); navigate('/'); }} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontWeight: '600' }}>Logout</button>
             </div>
+            
+
+            {showPaymentModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+                    <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', maxWidth: '400px', width: '90%', position: 'relative' }}>
+                        <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#9ca3af', lineHeight: '1' }}>✖</button>
+                        <h2 style={{ margin: '0 0 10px 0', color: '#111827' }}>Clear Outstanding Dues</h2>
+                        <p style={{ fontSize: '32px', fontWeight: '800', color: '#dc2626', margin: '10px 0' }}>₹{paymentDetails.amount.toFixed(2)}</p>
+                        <div style={{ background: '#f3f4f6', padding: '20px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
+                            <QRCodeSVG value={paymentDetails.upiLink} size={180} />
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '20px' }}>To: bindpratapsingh@oksbi</p>
+                        <button onClick={confirmPaymentAndClearDues} style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Confirm Payment Received</button>
+                    </div>
+                </div>
+            )}
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '2px solid #e5e7eb', paddingBottom: '10px', overflowX: 'auto' }}>
                 <button onClick={() => { setDashboardTab('COUNTER'); setMessage({type:'', text:''}); }} style={{ padding: '10px 20px', fontSize: '16px', fontWeight: 'bold', border: 'none', background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap', color: dashboardTab === 'COUNTER' ? '#2563eb' : '#6b7280', borderBottom: dashboardTab === 'COUNTER' ? '3px solid #2563eb' : 'none' }}>Checkout Counter</button>
@@ -319,24 +405,57 @@ const StaffDashboard = () => {
                             )}
 
                             {foundCustomer && !isEditingCustomer && (
-                                <div style={{ marginTop: '16px', padding: '16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #e0f2fe', position: 'relative' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                        <img src={foundCustomer.photoUrl || `https://placehold.co/80x80/0284c7/white?text=${foundCustomer.fullName.charAt(0)}`} alt="Profile" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: '2px solid #0284c7' }} />
-                                        <div><p style={{ margin: 0, color: '#0369a1', fontWeight: '700', fontSize: '18px' }}>✓ {foundCustomer.fullName}</p><p style={{ margin: '4px 0 0 0', color: '#0284c7', fontSize: '14px', fontFamily: 'monospace' }}>{foundCustomer.phone}</p></div>
-                                    </div>
-                                    <div style={{ marginTop: '15px', borderTop: '1px solid #bae6fd', paddingTop: '15px' }}>
-                                        <p style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: foundCustomer.currentDues > 0 ? '#dc2626' : '#166534' }}>Account Balance: {foundCustomer.currentDues > 0 ? `₹${foundCustomer.currentDues.toFixed(2)} Due` : 'Clear'}</p>
-                                        {foundCustomer.currentDues > 0 && (
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                <button onClick={handlePayDues} style={{ flex: 1, padding: '8px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>📱 Pay via UPI</button>
-                                                <button onClick={handleClearDues} style={{ flex: 1, padding: '8px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>💵 Cash / Waive</button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <button onClick={handleEditClick} style={{ position: 'absolute', top: '16px', right: '16px', padding: '6px 12px', background: 'white', color: '#0284c7', border: '1px solid #0284c7', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>Edit Profile</button>
-                                </div>
-                            )}
-
+    <div style={{ marginTop: '16px', padding: '16px', background: foundCustomer.isActive === false ? '#fef2f2' : '#f0f9ff', borderRadius: '8px', border: `1px solid ${foundCustomer.isActive === false ? '#fca5a5' : '#e0f2fe'}`, position: 'relative' }}>
+        
+        {/* --- CANCELLATION OVERRIDE VIEW --- */}
+        {foundCustomer.isActive === false ? (
+            <div style={{ textAlign: 'center', padding: '10px' }}>
+                <h3 style={{ color: '#991b1b', marginTop: 0, fontSize: '20px' }}>🚨 Account Cancelled 🚨</h3>
+                <p style={{ color: '#7f1d1d', marginBottom: '20px' }}>This membership was cancelled by management. The user cannot rent movies.</p>
+                <button 
+                    onClick={async () => {
+        if(window.confirm("Confirm collection of a NEW ₹1000 Security Deposit to restore this account?")) {
+            try {
+                // 1. Tell the backend to restore them
+                await api.put(`/staff/members/${foundCustomer.userId}/restore`);
+                
+                // 2. INSTANT UI UPDATE: Flip the active switch in React's memory!
+                setFoundCustomer(prev => ({ ...prev, isActive: true })); 
+                
+                // 3. Refresh the global data in the background so the dropdowns update
+                refreshCustomerData(foundCustomer.phone); 
+                
+            } catch (err) {
+                alert(err.response?.data || "Failed to restore");
+            }
+        }
+    }}
+                    style={{ padding: '12px 24px', background: '#10b981', color: 'white', fontWeight: 'bold', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '16px', boxShadow: '0 4px 6px rgba(16, 185, 129, 0.2)' }}
+                >
+                    Collect ₹1000 & Restore Account
+                </button>
+            </div>
+        ) : (
+            /* --- NORMAL ACTIVE CUSTOMER VIEW --- */
+            <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <img src={foundCustomer.photoUrl || `https://placehold.co/80x80/0284c7/white?text=${foundCustomer.fullName.charAt(0)}`} alt="Profile" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: '2px solid #0284c7' }} />
+                    <div><p style={{ margin: 0, color: '#0369a1', fontWeight: '700', fontSize: '18px' }}>✓ {foundCustomer.fullName}</p><p style={{ margin: '4px 0 0 0', color: '#0284c7', fontSize: '14px', fontFamily: 'monospace' }}>{foundCustomer.phone}</p></div>
+                </div>
+                <div style={{ marginTop: '15px', borderTop: '1px solid #bae6fd', paddingTop: '15px' }}>
+                    <p style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: foundCustomer.currentDues > 0 ? '#dc2626' : '#166534' }}>Account Balance: {foundCustomer.currentDues > 0 ? `₹${foundCustomer.currentDues.toFixed(2)} Due` : 'Clear'}</p>
+                    {foundCustomer.currentDues > 0 && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={handlePayDues} style={{ flex: 1, padding: '8px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>📱 Pay via UPI</button>
+                            <button onClick={handleClearDues} style={{ flex: 1, padding: '8px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>💵 Cash / Waive</button>
+                        </div>
+                    )}
+                </div>
+                <button onClick={handleEditClick} style={{ position: 'absolute', top: '16px', right: '16px', padding: '6px 12px', background: 'white', color: '#0284c7', border: '1px solid #0284c7', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>Edit Profile</button>
+            </>
+        )}
+    </div>
+)}
                             {foundCustomer && isEditingCustomer && (
                                 <div style={{ marginTop: '16px', padding: '16px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a' }}>
                                     <h4 style={{ margin: '0 0 12px 0', color: '#92400e' }}>Edit Customer</h4>
@@ -349,18 +468,22 @@ const StaffDashboard = () => {
                             )}
                         </div>
 
-                        <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', opacity: foundCustomer ? 1 : 0.6 }}>
-                            <h3 style={{ marginTop: 0, fontSize: '18px', color: '#111827', marginBottom: '20px' }}>2. Issue Movie</h3>
-                            <select value={selectedMovieId} onChange={e => setSelectedMovieId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '16px', marginBottom: '16px', background: 'white' }}>
-                                <option value="">-- Select Movie --</option>
-                                {catalog.map((group, idx) => (<option key={idx} value={group.itemIds[0]}>{group.title} ({group.format}) - {group.count} Available</option>))}
-                            </select>
-                            {foundCustomer && foundCustomer.currentDues > 0 && (
-                                <div style={{ padding: '10px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginBottom: '16px', fontWeight: 'bold', fontSize: '14px', textAlign: 'center', border: '1px solid #f87171' }}>⚠️ Customer must clear outstanding dues before renting.</div>
-                            )}
-                            <button onClick={handleIssueRental} disabled={!foundCustomer || foundCustomer.currentDues > 0} style={{ width: '100%', padding: '14px', background: (!foundCustomer || foundCustomer.currentDues > 0) ? '#9ca3af' : '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '16px', cursor: (!foundCustomer || foundCustomer.currentDues > 0) ? 'not-allowed' : 'pointer' }}>Complete Checkout</button>
-                        </div>
-                    </div>
+                       {/* Hide the issue box completely if they are cancelled! */}
+                        {(!foundCustomer || foundCustomer.isActive !== false) && (
+                            <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', opacity: foundCustomer ? 1 : 0.6 }}>
+                                <h3 style={{ marginTop: 0, fontSize: '18px', color: '#111827', marginBottom: '20px' }}>2. Issue Movie</h3>
+                                <select value={selectedMovieId} onChange={e => setSelectedMovieId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '16px', marginBottom: '16px', background: 'white' }}>
+                                    <option value="">-- Select Movie --</option>
+                                    {catalog.map((group, idx) => (<option key={idx} value={group.itemIds[0]}>{group.title} ({group.format}) - {group.count} Available</option>))}
+                                </select>
+                                {foundCustomer && foundCustomer.currentDues > 0 && (
+                                    <div style={{ padding: '10px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginBottom: '16px', fontWeight: 'bold', fontSize: '14px', textAlign: 'center', border: '1px solid #f87171' }}>⚠️ Customer must clear outstanding dues before renting.</div>
+                                )}
+                                <button onClick={handleIssueRental} disabled={!foundCustomer || foundCustomer.currentDues > 0} style={{ width: '100%', padding: '14px', background: (!foundCustomer || foundCustomer.currentDues > 0) ? '#9ca3af' : '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '16px', cursor: (!foundCustomer || foundCustomer.currentDues > 0) ? 'not-allowed' : 'pointer' }}>Complete Checkout</button>
+                            </div>
+                        )} {/* <--- THIS IS THE PROPER CLOSING BRACKET */}
+                    </div> {/* <--- THIS CLOSES THE MAIN GRID */}
+                
 
                     {foundCustomer && (
                         <>
@@ -476,18 +599,25 @@ const StaffDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredTransactions.map(tx => (
+                                {/* --- FIX: SAFE NAMES & TITLES IN GLOBAL LEDGER --- */}
+                                {filteredTransactions.map(tx => {
+                                    const title = tx.itemTitle || tx.item?.title || tx.inventoryItem?.title || 'Unknown Title';
+                                    const memberName = tx.memberName || tx.member?.fullName || 'Unknown Member';
+                                    return (
                                     <tr key={tx.loanId} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                         <td style={{ padding: '12px', fontFamily: 'monospace', color: '#6b7280' }}>{tx.loanId.substring(0, 8)}</td>
-                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#111827' }}>{tx.memberName}</td>
-                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#374151' }}>{tx.itemTitle}</td>
+                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#111827' }}>{memberName}</td>
+                                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#374151' }}>{title}</td>
                                         <td style={{ padding: '12px', color: '#4b5563' }}>{new Date(tx.issueDate || tx.checkoutDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</td>
                                         <td style={{ padding: '12px', color: '#4b5563' }}>{tx.returnDate ? new Date(tx.returnDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Pending...'}</td>
                                         <td style={{ padding: '12px' }}><span style={{ background: tx.status === 'RETURNED' ? '#dcfce7' : '#fef3c7', color: tx.status === 'RETURNED' ? '#166534' : '#92400e', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{tx.status}</span></td>
                                         <td style={{ padding: '12px', fontWeight: 'bold', color: tx.status === 'ACTIVE' ? '#9ca3af' : '#166534', textAlign: 'right' }}>{tx.status === 'ACTIVE' ? 'Pending...' : `₹${tx.rentAmount || '0.00'}`}</td>
                                         <td style={{ padding: '12px', fontWeight: 'bold', color: tx.status === 'ACTIVE' ? '#9ca3af' : '#dc2626', textAlign: 'right' }}>{tx.status === 'ACTIVE' ? 'Pending...' : `₹${tx.fineAmount || '0.00'}`}</td>
                                     </tr>
-                                ))}
+                                )})}
+                                {filteredTransactions.length === 0 && (
+                                    <tr><td colSpan="8" style={{ padding: '30px', textAlign: 'center', color: '#9ca3af', fontStyle: 'italic' }}>No global transactions found.</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -498,30 +628,60 @@ const StaffDashboard = () => {
                 <div style={{ padding: '32px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto' }}>
                     <h2 style={{ marginTop: 0, color: '#111827', marginBottom: '24px' }}>New Member Registration</h2>
                     <form onSubmit={handleRegisterMember}>
-                        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Full Name</label><input type="text" required value={regForm.fullName} onChange={e => setRegForm({...regForm, fullName: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="John Doe" /></div>
-                        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Mobile Number</label><input type="text" required value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="10-digit mobile number" /></div>
-                        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Physical Address</label><textarea required value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box', minHeight: '80px' }} placeholder="Full residential address" /></div>
-                        <div style={{ marginBottom: '24px' }}>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Member Live Photo</label>
-                            {regForm.photoUrl ? (
-                                <div style={{ textAlign: 'center' }}>
-                                    <img src={regForm.photoUrl} alt="Captured" style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '2px solid #059669', marginBottom: '10px' }} />
-                                    <input type="text" value={regForm.photoUrl} onChange={e => setRegForm({...regForm, photoUrl: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db', boxSizing: 'border-box', marginBottom: '10px' }} placeholder="Edit URL if needed..." />
-                                    <button type="button" onClick={() => setRegForm({...regForm, photoUrl: ''})} style={{ display: 'block', width: '100%', padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retake / Clear Photo</button>
-                                </div>
-                            ) : (
-                                <div style={{ textAlign: 'center', background: '#111', padding: '15px', borderRadius: '8px' }}>
-                                    <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: "user" }} style={{ width: '100%', maxWidth: '300px', borderRadius: '4px', marginBottom: '10px' }} />
-                                    <button type="button" onClick={capturePhoto} style={{ display: 'block', width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '10px' }}>📸 Capture Photo</button>
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ marginBottom: '24px', padding: '16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <input type="checkbox" id="deposit" checked={regForm.depositPaid} onChange={e => setRegForm({...regForm, depositPaid: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
-                            <label htmlFor="deposit" style={{ fontWeight: '700', color: '#92400e', cursor: 'pointer' }}>I confirm that the ₹1000 Security Deposit has been collected from the customer.</label>
-                        </div>
-                        <button type="submit" style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '16px', cursor: 'pointer' }}>Register & Activate Member</button>
-                    </form>
+    <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Full Name</label><input type="text" required disabled={otpSent} value={regForm.fullName} onChange={e => setRegForm({...regForm, fullName: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="John Doe" /></div>
+    
+    <div style={{ marginBottom: '16px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Mobile Number</label>
+        <div style={{ display: 'flex', gap: '10px' }}>
+            <span style={{ padding: '12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: 'bold' }}>+91</span>
+            <input type="text" required disabled={otpSent} value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box' }} placeholder="10-digit mobile number" />
+            {!otpSent && <button type="button" onClick={handleSendOtp} style={{ padding: '0 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Send OTP</button>}
+        </div>
+    </div>
+
+    {/* EXPLICIT VERIFICATION STEP */}
+    {otpSent && !otpVerified && (
+        <div style={{ marginBottom: '16px', padding: '16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#1d4ed8' }}>Enter 6-Digit Verification Code</label>
+            <input type="text" required value={regForm.otp} onChange={e => setRegForm({...regForm, otp: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #93c5fd', fontSize: '18px', letterSpacing: '4px', textAlign: 'center', fontWeight: 'bold', outline: 'none', marginBottom: '12px' }} placeholder="000000" maxLength="6" />
+            <button type="button" onClick={handleVerifyOtp} style={{ width: '100%', padding: '12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Verify OTP</button>
+        </div>
+    )}
+
+    {/* SUCCESS INDICATOR */}
+    {otpVerified && (
+        <div style={{ marginBottom: '16px', padding: '12px', background: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', color: '#166534', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            ✅ Phone Number Verified Successfully
+        </div>
+    )}
+
+    {/* REST OF FORM UNLOCKS ONLY AFTER VERIFICATION */}
+    <div style={{ opacity: otpVerified ? 1 : 0.4, pointerEvents: otpVerified ? 'auto' : 'none', transition: 'opacity 0.3s' }}>
+        <div style={{ marginBottom: '16px' }}><label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Physical Address</label><textarea required disabled={!otpVerified} value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', boxSizing: 'border-box', minHeight: '80px' }} placeholder="Full residential address" /></div>
+        
+        <div style={{ marginBottom: '24px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>Member Live Photo</label>
+            {regForm.photoUrl ? (
+                <div style={{ textAlign: 'center' }}>
+                    <img src={regForm.photoUrl} alt="Captured" style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '2px solid #059669', marginBottom: '10px' }} />
+                    <button type="button" onClick={() => setRegForm({...regForm, photoUrl: ''})} style={{ display: 'block', width: '100%', padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retake Photo</button>
+                </div>
+            ) : (
+                <div style={{ textAlign: 'center', background: '#111', padding: '15px', borderRadius: '8px' }}>
+                    <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: "user" }} style={{ width: '100%', maxWidth: '300px', borderRadius: '4px', marginBottom: '10px' }} />
+                    <button type="button" onClick={capturePhoto} disabled={!otpVerified} style={{ display: 'block', width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '10px' }}>📸 Capture Photo</button>
+                </div>
+            )}
+        </div>
+        
+        <div style={{ marginBottom: '24px', padding: '16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <input type="checkbox" id="deposit" disabled={!otpVerified} checked={regForm.depositPaid} onChange={e => setRegForm({...regForm, depositPaid: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+            <label htmlFor="deposit" style={{ fontWeight: '700', color: '#92400e', cursor: 'pointer' }}>I confirm that the ₹1000 Security Deposit has been collected.</label>
+        </div>
+        
+        <button type="submit" disabled={!otpVerified} style={{ width: '100%', padding: '14px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', fontSize: '18px', cursor: 'pointer' }}>Complete Registration</button>
+    </div>
+</form>
                 </div>
             )}
         </div>
